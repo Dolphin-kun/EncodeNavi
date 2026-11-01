@@ -1,0 +1,204 @@
+<UserControl x:Class="EncodeNavi.View.EncodeNaviControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ctrl="clr-namespace:YukkuriMovieMaker.Controls;assembly=YukkuriMovieMaker.Plugin"
+             xmlns:recommendation="clr-namespace:EncodeNavi.Recommendation"
+             xmlns:settings="clr-namespace:EncodeNavi.Settings"
+             mc:Ignorable="d"
+             d:DesignHeight="720" d:DesignWidth="420">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <SolidColorBrush x:Key="WarningBrush" Color="#FFFF9800"/>
+        <SolidColorBrush x:Key="WarningBackgroundBrush" Color="#2EFF9800"/>
+        <SolidColorBrush x:Key="OkBrush" Color="#FF4CAF50"/>
+        <SolidColorBrush x:Key="OkBackgroundBrush" Color="#264CAF50"/>
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,12,0,4"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="8">
+
+            <Border DataContext="{Binding Update}"
+                    Visibility="{Binding ShowsNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    Background="{DynamicResource WarningBackgroundBrush}" BorderBrush="{DynamicResource WarningBrush}" BorderThickness="0,1"
+                    Padding="8,4" Margin="0,0,0,8">
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Command="{Binding DismissCommand}" Content="×" Padding="6,0" Margin="6,0,0,0" ToolTip="今回は表示しない"/>
+                    <Button DockPanel.Dock="Right" Command="{Binding OpenDownloadPageCommand}" Content="ダウンロードページを開く" Padding="8,1" Margin="8,0,0,0"/>
+                    <TextBlock VerticalAlignment="Center" TextWrapping="Wrap">
+                        <Run Text="EncodeNavi の新しいバージョン"/>
+                        <Run Text="{Binding LatestVersion, Mode=OneWay}" FontWeight="SemiBold"/>
+                        <Run Text="が公開されています（今は"/>
+                        <Run Text="{Binding CurrentVersion, Mode=OneWay}"/><Run Text="）"/>
+                    </TextBlock>
+                </DockPanel>
+            </Border>
+
+            <TextBlock Text="出力方法" Margin="0,0,0,2"/>
+            <ctrl:EnumComboBox EnumType="{x:Type recommendation:OutputMethod}" Value="{Binding OutputMethod}"/>
+
+            <TextBlock Text="目的" Margin="0,8,0,2"/>
+            <ctrl:EnumComboBox EnumType="{x:Type recommendation:EncodeGoal}" Value="{Binding Goal}"/>
+
+            <StackPanel Visibility="{Binding IsPlatformSelectable, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="投稿先" Margin="0,8,0,2"/>
+                <ctrl:EnumComboBox EnumType="{x:Type recommendation:TargetPlatform}" Value="{Binding Platform}"/>
+            </StackPanel>
+
+            <CheckBox Content="自動で解析する" IsChecked="{Binding IsAutoAnalyzeEnabled}" Margin="0,10,0,0"
+                      ToolTip="動画出力画面やこのパネルを開いたときに、タイムラインの素材を自動で解析します。変更されていない素材は前回の結果を使うので、2回目以降はすぐに終わります。オフにすると「解析」ボタンで解析します"/>
+            <CheckBox Content="音量も確認する" IsChecked="{Binding IsLoudnessCheckEnabled}" Margin="0,4,0,0"
+                      ToolTip="タイムライン全体の音（ボイス・BGM・効果音のミックス）の大きさを測って、音量調整と音割れ対策の設定も提案します。動画の長さに応じて解析に時間がかかります"/>
+            <CheckBox Content="出力中に映像を表示する" IsChecked="{Binding IsRenderPreviewEnabled}" Margin="0,4,0,0"
+                      ToolTip="出力中のウィンドウに、いま出力しているあたりの映像を約1秒ごとに表示します。表示用に別に描画するので、出力が少し遅くなることがあります"/>
+            <TextBlock Text="出力画面の表示" Margin="0,8,0,2"/>
+            <ctrl:EnumComboBox EnumType="{x:Type settings:OutputHintTheme}" Value="{Binding HintTheme}"
+                               ToolTip="YMM4の動画出力画面で、推奨と違う欄を示す表示の見た目"/>
+
+            <Grid Margin="0,6,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="解析" Padding="0,4" Command="{Binding AnalyzeCommand}"
+                        Visibility="{Binding IsManualAnalyzeVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        ToolTip="タイムライン（シーン内を含む）の動画・音声素材を解析します。音声は中身もデコードするため、素材が多いと時間がかかります"/>
+                <Button Grid.Column="1" Content="中止" Margin="4,0,0,0" Padding="8,4" Command="{Binding CancelCommand}"
+                        Visibility="{Binding IsAnalyzing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </Grid>
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,4,0,0" Opacity="0.8"/>
+            <TextBlock Margin="0,2,0,0" Opacity="0.8">
+                <Run Text="プロジェクト: "/>
+                <Run Text="{Binding ProjectText, Mode=OneWay}"/>
+            </TextBlock>
+
+            <StackPanel Visibility="{Binding HasRecommendations, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                <TextBlock Text="推奨設定" FontWeight="Bold" Margin="0,16,0,4"
+                           ToolTip="「現在」の欄は、YMM4の動画出力の設定を変えると自動で更新されます"/>
+
+                <Border Padding="6,4" Margin="0,0,0,4" BorderThickness="3,0,0,0">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="BorderBrush" Value="{DynamicResource OkBrush}"/>
+                            <Setter Property="Background" Value="{DynamicResource OkBackgroundBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasMisconfigured}" Value="True">
+                                    <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                    <Setter Property="Background" Value="{DynamicResource WarningBackgroundBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding MisconfiguredSummary}" TextWrapping="Wrap" FontWeight="Bold"/>
+                </Border>
+
+                <ItemsControl ItemsSource="{Binding Recommendations}"
+                              BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}" BorderThickness="0,1,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}" BorderThickness="0,0,0,1">
+                                <Border Padding="6,4" BorderThickness="3,0,0,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMisconfigured}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource WarningBackgroundBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="Bold" TextAlignment="Right" TextWrapping="Wrap" Margin="8,0,0,0"/>
+                                        </Grid>
+                                        <Border HorizontalAlignment="Right" BorderThickness="0,0,0,2" Padding="0,0,0,1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMisconfigured}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="11">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Opacity" Value="0.7"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMisconfigured}" Value="True">
+                                                                <Setter Property="Opacity" Value="1"/>
+                                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                                <Run Text="現在: "/>
+                                                <Run Text="{Binding Current, Mode=OneWay}"/>
+                                                <Run Text="{Binding ChangeText, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </Border>
+                                        <TextBlock Text="{Binding Reason}" TextWrapping="Wrap" FontSize="11" Opacity="0.85" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Visibility="{Binding HasOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="映像コマンド" Style="{StaticResource SectionHeader}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding VideoOptions, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"/>
+                        <Button Grid.Column="1" Content="コピー" Margin="4,0,0,0" Padding="8,0" Command="{Binding CopyVideoOptionsCommand}"/>
+                    </Grid>
+
+                    <TextBlock Text="音声コマンド" Style="{StaticResource SectionHeader}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding AudioOptions, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"/>
+                        <Button Grid.Column="1" Content="コピー" Margin="4,0,0,0" Padding="8,0" Command="{Binding CopyAudioOptionsCommand}"/>
+                    </Grid>
+                </StackPanel>
+
+                <Expander Header="解析した素材" Margin="0,12,0,0">
+                    <ItemsControl ItemsSource="{Binding Materials}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,6" ToolTip="{Binding FilePath}">
+                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Video}" TextWrapping="Wrap" FontSize="11"/>
+                                    <TextBlock Text="{Binding Audio}" TextWrapping="Wrap" FontSize="11"/>
+                                    <TextBlock Text="{Binding Error, StringFormat='解析できませんでした: {0}'}" TextWrapping="Wrap" FontSize="11" Foreground="OrangeRed"
+                                               Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
