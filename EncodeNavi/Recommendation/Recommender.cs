@@ -113,7 +113,7 @@ namespace EncodeNavi.Recommendation
             items.Add(new("映像エンコーダ", video.Encoder, encoderCurrent, video.EncoderReason) { Target = OutputSettingTargets.VideoOptions });
             items.Add(new("映像品質", video.Quality, qualityCurrent, video.QualityReason) { Target = qualityTarget });
             items.Add(new("preset", video.Preset, current.Preset, video.PresetReason) { Target = OutputSettingTargets.VideoOptions });
-            items.Add(new("ハードウェアエンコード", video.HardwareEncoder != null ? "ON" : "OFF", current.HardwareEncoder, HardwareReason(goal, video, analysis.Encoders))
+            items.Add(new("ハードウェアエンコード", video.HardwareEncoder != null ? "ON" : "OFF", current.HardwareEncoder, HardwareReason(goal, video, analysis.Encoders, fps))
             {
                 Target = OutputSettingTargets.FFmpegHardwareEncoder,
             });
@@ -199,7 +199,7 @@ namespace EncodeNavi.Recommendation
                 : new("エンコード速度", "50", current.EncodeSpeed, "YMM4の初期値。大きくすると速くなるが画質が落ちる") { Target = OutputSettingTargets.EncodeSpeed });
 
             var hardwareReason = useHardware
-                ? $"このPCではGPUエンコーダ（{hardware}）が使えるので、CPUのエンコードより大幅に速い"
+                ? $"このPCではGPUエンコーダ（{hardware}）が使えるので、エンコードがCPUより大幅に速い{RenderBoundNote}"
                 : hardware != null
                     ? $"GPUエンコードは環境によって画質が落ちる場合があるので（YMM4の説明より）、安定した画質にするためOFF。このPCでは{hardware}が使えるので、急ぐならONでもよい"
                     : "このPCで使えるGPUエンコーダが見つからなかった";
@@ -229,7 +229,8 @@ namespace EncodeNavi.Recommendation
                 AddPlatformLimitNotes(spec, project, videoKbps, audioKbps, notes);
         }
 
-        private const double TargetLufs = -14;
+        private const double DefaultTargetLufs = -14;
+        private static readonly (int Post, int Delivered)[] NiconicoAudioTiers = [(128, 128), (192, 192), (256, 320)];
         private const double TargetPeakLimitDb = -1;
         private const double LoudnessTolerance = 1;
 
@@ -238,11 +239,10 @@ namespace EncodeNavi.Recommendation
             if (analysis.Loudness is not { } loudness)
                 return;
 
+            var targetLufs = spec?.TargetLufs ?? DefaultTargetLufs;
             var measured = $"今のミックスは {loudness.IntegratedLufs:0.0} LUFS（ピーク {loudness.PeakDb:0.0} dBFS）";
-            var difference = TargetLufs - loudness.IntegratedLufs;
-            var targetReason = spec?.Platform == TargetPlatform.YouTube
-                ? "YouTubeは約 -14 LUFS より大きい動画の音量を下げて再生するので、-14 LUFS に合わせると他の動画と同じくらいの大きさで聞こえる"
-                : "動画サイトでよく使われる -14 LUFS に合わせると、他の動画と同じくらいの大きさで聞こえる";
+            var difference = targetLufs - loudness.IntegratedLufs;
+            var targetReason = spec?.LoudnessReason ?? "動画サイトでよく使われる -14 LUFS に合わせると、他の動画と同じくらいの大きさで聞こえる";
             var modeReason = Math.Abs(difference) <= LoudnessTolerance
                 ? $"{measured}で、ほぼ目標どおり。素材を差し替えても揃うように、出力時に目標音量へ合わせる設定にしておく"
                 : difference > 0
@@ -250,7 +250,7 @@ namespace EncodeNavi.Recommendation
                     : $"{measured}で、目標より {-difference:0.0} dB 大きい。「目標音量にする」で下げて、聞き疲れしにくい大きさにする";
 
             items.Add(new("音量調整", EnumText.Get(LoudnessFixMode.Both), current.LoudnessMode, modeReason) { Target = OutputSettingTargets.LoudnessMode });
-            items.Add(new("目標音量", CurrentOutputSettings.FormatLufs(TargetLufs), current.LoudnessTarget, targetReason) { Target = OutputSettingTargets.LoudnessTarget });
+            items.Add(new("目標音量", CurrentOutputSettings.FormatLufs(targetLufs), current.LoudnessTarget, targetReason) { Target = OutputSettingTargets.LoudnessTarget });
 
             var predictedPeak = loudness.PeakDb + difference;
             var compressorReason = predictedPeak > TargetPeakLimitDb
@@ -295,9 +295,13 @@ namespace EncodeNavi.Recommendation
                 if (scale < 1)
                 {
                     var (w, h) = Scale(project, scale);
-                    return (w, h, $"{spec.Name}の上限（{spec.MaxLongEdge}x{spec.MaxShortEdge}）に収まるように縮小");
+                    return spec.Platform == TargetPlatform.Niconico
+                        ? (w, h, $"ニコニコ動画の配信は最高1080pで（公式）、それより大きく投稿しても配信画質は変わらないため縮小する（アップロードも軽くなる）")
+                        : (w, h, $"{spec.Name}の上限（{spec.MaxLongEdge}x{spec.MaxShortEdge}）に収まるように縮小");
                 }
-                return (project.Width, project.Height, $"{spec.Name}の上限内なのでプロジェクト解像度（{projectText}）のまま。投稿先で再エンコードされるので、大きめで投稿した方が画質が残りやすい");
+                return spec.Platform == TargetPlatform.Niconico
+                    ? (project.Width, project.Height, $"プロジェクト解像度（{projectText}）のまま" + NiconicoTierNote(project.Width, project.Height))
+                    : (project.Width, project.Height, $"{spec.Name}の上限内なのでプロジェクト解像度（{projectText}）のまま。投稿先で再エンコードされるので、大きめで投稿した方が画質が残りやすい");
             }
 
             if (sources.Videos.Count == 0)
@@ -316,6 +320,15 @@ namespace EncodeNavi.Recommendation
             return (width, height,
                 $"動画素材は最大 {largest.Width}x{largest.Height} で、それ以上の解像度にしても素材の情報量は増えないため。" +
                 $"ただし文字・立ち絵などYMM4で描画する要素もこの解像度になるので、文字のくっきりさを優先するならプロジェクト解像度（{projectText}）のままでもよい");
+        }
+
+        private static string NiconicoTierNote(int width, int height)
+        {
+            var (tier, nextCondition, nextTier) = PlatformSpec.GetNiconicoTier(width, height);
+            var note = $"。ニコニコ動画は投稿した解像度で配信画質が決まり（公式）、{width}x{height}なら最高{tier}pで配信される";
+            return nextCondition is null
+                ? note
+                : note + $"。{nextTier}pでも配信するには{nextCondition}が必要なので、プロジェクト設定の解像度を上げるとよい";
         }
 
         private static (int Width, int Height) Scale(ProjectInfo project, double scale) =>
@@ -433,6 +446,15 @@ namespace EncodeNavi.Recommendation
                     reasons.Add("音声の設定はエンコード時間にほとんど影響しないため、容量優先と同じ値");
                     return (kbps, string.Join("。", reasons));
 
+                case EncodeGoal.Platform when spec!.Platform == TargetPlatform.Niconico:
+                    var desired = (int)(kbps * 1.5);
+                    var (post, delivered) = NiconicoAudioTiers.FirstOrDefault(x => x.Delivered >= desired, NiconicoAudioTiers[^1]);
+                    reasons.Add(spec.AudioNote);
+                    reasons.Add(post == NiconicoAudioTiers[^1].Post
+                        ? $"{post} kbpsで最高の{delivered} kbps配信になり、それ以上にしても配信音質は変わらない"
+                        : $"再エンコードの劣化を見込んで素材相当（{kbps} kbps）より余裕を持たせても、{post} kbpsで作られる{delivered} kbps配信で足りる");
+                    return (post, string.Join("。", reasons));
+
                 default:
                     var limit = isMono ? spec!.MonoAudioKbps : spec!.StereoAudioKbps;
                     var withHeadroom = SnapUp((int)(kbps * 1.5));
@@ -471,13 +493,15 @@ namespace EncodeNavi.Recommendation
 
             var threads = EncoderCapabilities.CpuThreads;
             var cpuText = $"このPCのCPUは {threads} スレッド";
+            var svtAv1 = ChooseSvtAv1Preset(encoders.SvtAv1Fps, fps, threads);
+            var isCpuTooSlow = encoders.SvtAv1Fps is { } measured ? measured < fps * SlowCpuRatio : threads < MediumCpuThreads;
 
-            if (threads < MediumCpuThreads && encoders.HardwareAv1Encoder is { } av1Hardware)
+            if (isCpuTooSlow && encoders.HardwareAv1Encoder is { } av1Hardware)
             {
                 var cq = QualityToHardwareScale(HardwareAv1Quality, 63);
                 return new VideoPlan(
                     $"{av1Hardware} (AV1・GPU)",
-                    $"{cpuText}で、ソフトウェアのAV1だと出力にかなり時間がかかる。このPCのGPUはAV1のエンコードに対応しているので、GPUのAV1なら速く、H.264より小さくできる。映像コマンドを -c:v libsvtav1 にしてハードウェアエンコードをONにすると、YMM4がGPUのAV1エンコーダに置き換える",
+                    $"{svtAv1.SpeedText}で、ソフトウェアのAV1だと出力にかなり時間がかかる。このPCのGPUはAV1のエンコードに対応しているので、GPUのAV1なら速く、H.264より小さくできる。映像コマンドを -c:v libsvtav1 にしてハードウェアエンコードをONにすると、YMM4がGPUのAV1エンコーダに置き換える",
                     "-c:v libsvtav1",
                     $"{HardwareAv1Quality}（GPUの品質値 {cq} 相当）",
                     $"YMM4の「映像品質」{HardwareAv1Quality}は、AV1のGPUエンコーダの品質値 {cq} 相当（AV1は0〜63の目盛り）。見た目の劣化を抑えつつ容量を減らせる目安",
@@ -489,7 +513,7 @@ namespace EncodeNavi.Recommendation
             if (encoders.Has("libsvtav1"))
             {
                 var crf = (shortEdge <= 720 ? 30 : shortEdge <= 1080 ? 32 : shortEdge <= 1440 ? 34 : 36) + (isHighlyCompressed ? 2 : 0);
-                var preset = threads >= FastCpuThreads ? 5 : threads >= MediumCpuThreads ? 6 : 8;
+                var preset = svtAv1.Preset;
                 return new VideoPlan(
                     "libsvtav1 (AV1)",
                     "同じ画質ならH.264より大幅に小さくできるAV1を使う。YMM4のFFmpegで画質(CRF)を指定できるソフトウェアエンコーダの中で最も圧縮効率が高い",
@@ -497,7 +521,7 @@ namespace EncodeNavi.Recommendation
                     $"CRF {crf}",
                     $"SVT-AV1のCRFは小さいほど高画質・大容量。{shortEdge}pでは{crf}前後が、見た目の劣化をほぼ感じずに容量を抑えられる目安{compressedNote}",
                     preset.ToString(),
-                    $"SVT-AV1のpresetは0(最遅)〜13(最速)で、小さいほど同じ画質でファイルが小さくなるが時間がかかる。{cpuText}なので、出力時間とのバランスで{preset}にする",
+                    $"SVT-AV1のpresetは0(最遅)〜13(最速)で、小さいほど同じ画質でファイルが小さくなるが時間がかかる。{svtAv1.SpeedText}なので、出力時間とのバランスで{preset}にする",
                     null, null);
             }
 
@@ -568,7 +592,7 @@ namespace EncodeNavi.Recommendation
             {
                 return new VideoPlan(
                     $"{hardware} (H.264・GPU)",
-                    $"このPCではGPUエンコーダ（{hardware}）が使えるので、CPUのソフトウェアエンコードより大幅に速い。映像コマンドは -c:v h264 のままにすると、YMM4がGPUエンコーダに自動で置き換える",
+                    $"このPCではGPUエンコーダ（{hardware}）が使えるので、エンコードがCPUより大幅に速い{RenderBoundNote}。映像コマンドは -c:v h264 のままにすると、YMM4がGPUエンコーダに自動で置き換える",
                     "-c:v h264",
                     $"{HardwareVideoQuality}（GPUの品質値 24 相当）",
                     $"YMM4の「映像品質」{HardwareVideoQuality}は、GPUエンコーダの品質値(cq/QP) 24 相当。GPUエンコードは同じ画質だと容量が大きくなりやすいので、少し高めの画質にしておく",
@@ -622,6 +646,31 @@ namespace EncodeNavi.Recommendation
         private const int FastCpuThreads = 16;
         private const int MediumCpuThreads = 8;
 
+        private const double SlowCpuRatio = 0.5;
+        private const string RenderBoundNote = "（エフェクトが重く描画に時間がかかる動画では、出力全体の差は小さくなる）";
+        private const double RealtimeMargin = 1.25;
+
+        private static readonly (int Preset, double Speed)[] SvtAv1PresetSpeeds = [(5, 0.4), (6, 0.5), (8, 1.0)];
+        private const int SvtAv1FastPreset = 10;
+        private const double SvtAv1FastSpeed = 1.6;
+
+        private record SvtAv1Choice(int Preset, double? Fps, string SpeedText);
+
+        private static SvtAv1Choice ChooseSvtAv1Preset(double? measuredFps, int fps, int threads)
+        {
+            if (measuredFps is not { } fps8)
+            {
+                var preset = threads >= FastCpuThreads ? 5 : threads >= MediumCpuThreads ? 6 : 8;
+                return new(preset, null, $"このPCのCPUは {threads} スレッド");
+            }
+
+            var (chosen, speed) = SvtAv1PresetSpeeds.FirstOrDefault(x => fps8 * x.Speed >= fps * RealtimeMargin);
+            if (chosen == 0)
+                (chosen, speed) = fps8 >= fps * SlowCpuRatio ? (EncoderCapabilities.SvtAv1MeasurePreset, 1.0) : (SvtAv1FastPreset, SvtAv1FastSpeed);
+            return new(chosen, fps8 * speed,
+                $"このPCでエンコードの速さを測ったところ、preset {EncoderCapabilities.SvtAv1MeasurePreset} で毎秒約 {fps8:0} フレーム");
+        }
+
         private static string GetX264Preset(int threads) => threads >= FastCpuThreads ? "slow" : threads >= MediumCpuThreads ? "medium" : "fast";
 
         private static int QualityToHardwareScale(int quality, int max) =>
@@ -633,20 +682,29 @@ namespace EncodeNavi.Recommendation
             return Math.Clamp((int)Math.Round(kbps / 100) * 100, 500, 100000);
         }
 
-        private static string HardwareReason(EncodeGoal goal, VideoPlan video, EncoderCapabilities encoders)
+        private static string HardwareReason(EncodeGoal goal, VideoPlan video, EncoderCapabilities encoders, int fps)
         {
             if (video.HardwareEncoder != null)
-                return $"GPU（{video.HardwareEncoder}）でエンコードすると大幅に速くなる";
+                return $"GPU（{video.HardwareEncoder}）でエンコードすると、エンコードが大幅に速くなる{RenderBoundNote}";
 
             var availability = encoders.HardwareH264Encoder != null
                 ? $"このPCでは{encoders.HardwareH264Encoder}が使えるが、"
                 : "このPCで使えるGPUエンコーダは見つからなかった。";
             return goal switch
             {
-                EncodeGoal.Size => availability + "GPUエンコードは同じ画質だとソフトウェアより容量が大きくなりやすく、ONだとYMM4が映像コマンドのcrf/preset指定を削除してしまう",
+                EncodeGoal.Size => availability + GpuSpeedText(video, encoders, fps) + "同じ画質ならAV1のほうが小さくなることが多い（静止画中心の動画では差が小さく、GPUでも同じくらいの容量になることがある）。ONだとYMM4が映像コマンドのcrf/preset指定を削除してしまうので、時間を優先するなら「速度優先」を選ぶ",
                 EncodeGoal.Platform => availability + "ONだとYMM4が映像コマンドのビットレート/preset指定を削除してGPU用の設定に置き換えてしまう",
                 _ => availability + "ONのままでもソフトウェアに切り替わるが、その際に映像コマンドのcrf/ビットレート指定が削除される",
             };
+        }
+
+        private static string GpuSpeedText(VideoPlan video, EncoderCapabilities encoders, int fps)
+        {
+            if (!video.Encoder.StartsWith("libsvtav1", StringComparison.Ordinal)
+                || encoders.HardwareH264Fps is not { } hardwareFps
+                || ChooseSvtAv1Preset(encoders.SvtAv1Fps, fps, EncoderCapabilities.CpuThreads).Fps is not { } svtAv1Fps)
+                return "";
+            return $"このPCで測った速さでは、エンコードはGPUのほうが約 {hardwareFps / svtAv1Fps:0.0} 倍速い{RenderBoundNote}。ただし";
         }
 
         private static void AddPlatformLimitNotes(PlatformSpec spec, ProjectInfo project, int? videoKbps, int audioKbps, List<string> notes)

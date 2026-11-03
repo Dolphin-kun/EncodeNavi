@@ -13,7 +13,7 @@ namespace EncodeNavi.OutputDialog
 
         private record Palette(Brush Outline, Brush Background, Brush Border, Brush Foreground);
 
-        public HintAdorner(FrameworkElement adornedElement, OutputHint hint, Action showDetails, bool isMonochrome) : base(adornedElement)
+        public HintAdorner(FrameworkElement adornedElement, OutputHint hint, bool isMonochrome) : base(adornedElement)
         {
             var palette = isMonochrome ? GetControlPalette(adornedElement) : GetColorPalette(hint.Kind);
 
@@ -44,8 +44,6 @@ namespace EncodeNavi.OutputDialog
                     button.Content = "✓ コピーしました";
                 }));
             }
-            if (hint.ShowsDetailsButton)
-                content.Children.Add(CreateButton("詳細", "推奨値の理由や注意点を別ウィンドウで表示します", _ => showDetails()));
 
             callout = new Border
             {

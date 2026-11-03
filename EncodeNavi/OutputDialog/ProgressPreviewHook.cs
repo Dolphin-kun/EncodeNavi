@@ -133,13 +133,7 @@ namespace EncodeNavi.OutputDialog
             Grid.SetRow(frame, 0);
             grid.Children.Add(frame);
 
-            var added = height + PreviewMargin;
-            if (!double.IsNaN(grid.Height))
-                grid.Height += added;
-            if (!double.IsNaN(view.Height))
-                view.Height += added;
-            if (Window.GetWindow(view) is { } window && (window.SizeToContent & SizeToContent.Height) == 0)
-                window.Height += added;
+            ProgressViewLayout.Grow(view, height + PreviewMargin);
 
             renderer = new FramePreviewRenderer(scene, bitmap => view.Dispatcher.BeginInvoke(() =>
             {

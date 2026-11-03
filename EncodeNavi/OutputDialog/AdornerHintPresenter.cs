@@ -2,7 +2,7 @@ using System.Windows.Documents;
 
 namespace EncodeNavi.OutputDialog
 {
-    internal sealed class AdornerHintPresenter(bool isMonochrome, Action showDetails) : IHintPresenter
+    internal sealed class AdornerHintPresenter(bool isMonochrome) : IHintPresenter
     {
         private readonly List<(AdornerLayer Layer, Adorner Adorner)> adorners = [];
 
@@ -13,7 +13,7 @@ namespace EncodeNavi.OutputDialog
             {
                 if (AdornerLayer.GetAdornerLayer(element) is not { } layer)
                     continue;
-                var adorner = new HintAdorner(element, hint, showDetails, isMonochrome);
+                var adorner = new HintAdorner(element, hint, isMonochrome);
                 layer.Add(adorner);
                 adorners.Add((layer, adorner));
             }

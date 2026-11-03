@@ -29,7 +29,9 @@ namespace EncodeNavi.Analysis
             });
 
             progress.Report("使用できるエンコーダを確認中…");
-            var encoders = await encodersTask;
+            var detected = await encodersTask;
+            progress.Report("このPCのエンコード速度を測定中…");
+            var encoders = await detected.MeasureSpeedAsync(project.Width, project.Height, token);
             return new AnalysisResult(materials, encoders);
         }
 
