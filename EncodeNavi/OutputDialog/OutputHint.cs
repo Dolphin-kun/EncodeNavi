@@ -11,7 +11,7 @@ namespace EncodeNavi.OutputDialog
         Info,
     }
 
-    internal record OutputHint(string Target, OutputHintKind Kind, string Text, string? ToolTip = null, string? CopyText = null, bool ShowsDetailsButton = false);
+    internal record OutputHint(string Target, OutputHintKind Kind, string Text, string? ToolTip = null, string? CopyText = null);
 
     internal static class OutputHintBuilder
     {
@@ -26,7 +26,7 @@ namespace EncodeNavi.OutputDialog
                 var text = AnalysisStore.IsAnalyzing
                     ? $"EncodeNavi: {AnalysisStore.StatusText}"
                     : "EncodeNavi: 「詳細」から解析すると、ここに推奨設定を表示します";
-                return [new(OutputSettingTargets.General, OutputHintKind.Info, text, ShowsDetailsButton: true)];
+                return [new(OutputSettingTargets.General, OutputHintKind.Info, text)];
             }
 
             var plan = Recommender.Recommend(settings.Goal, settings.Platform, method, project, analysis, CurrentOutputSettings.Read(method));
@@ -35,7 +35,7 @@ namespace EncodeNavi.OutputDialog
             var analyzingText = AnalysisStore.IsAnalyzing ? "（再解析中…）" : "";
 
             if (misconfigured.Count == 0)
-                return [new(OutputSettingTargets.General, OutputHintKind.Ok, $"EncodeNavi: 推奨どおりです（{goalName}）{analyzingText}", ShowsDetailsButton: true)];
+                return [new(OutputSettingTargets.General, OutputHintKind.Ok, $"EncodeNavi: 推奨どおりです（{goalName}）{analyzingText}")];
 
             var hints = new List<OutputHint>();
             foreach (var group in misconfigured.GroupBy(x => x.Target!))
@@ -56,7 +56,7 @@ namespace EncodeNavi.OutputDialog
             var generalText = $"EncodeNavi: 推奨と違う設定が {misconfigured.Count} 件（{goalName}）{analyzingText}"
                 + string.Concat(general.Select(x => $" / {x.Name}: {x.Value}{x.ChangeHint}"));
             var generalToolTip = string.Join("\n", misconfigured.Select(x => $"・{x.Name}: {x.Current} → {x.Value}"));
-            hints.Add(new(OutputSettingTargets.General, OutputHintKind.Warning, generalText, generalToolTip, ShowsDetailsButton: true));
+            hints.Add(new(OutputSettingTargets.General, OutputHintKind.Warning, generalText, generalToolTip));
 
             return hints;
         }

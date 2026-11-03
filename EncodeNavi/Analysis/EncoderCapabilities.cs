@@ -6,7 +6,7 @@ using YukkuriMovieMaker.Plugin.FileSource.FFmpeg;
 
 namespace EncodeNavi.Analysis
 {
-    internal record EncoderCapabilities(IReadOnlySet<string> SoftwareEncoders, string? HardwareH264Encoder, string? HardwareAv1Encoder = null)
+    internal record EncoderCapabilities(IReadOnlySet<string> SoftwareEncoders, string? HardwareH264Encoder, string? HardwareAv1Encoder = null, double? SvtAv1Fps = null, double? HardwareH264Fps = null)
     {
         private const long MinDiscreteVideoMemory = 512L * 1024 * 1024;
         private const int NvidiaVendorId = 0x10DE;
@@ -19,7 +19,12 @@ namespace EncodeNavi.Analysis
 
         private static readonly string[] HardwareAv1Candidates = ["av1_nvenc", "av1_qsv", "av1_amf"];
 
+        public const int SvtAv1MeasurePreset = 8;
+        private const int MeasureFrames = 90;
+        private const int MinMeasureFrames = 20;
+
         private static readonly ConcurrentDictionary<string, string?> hardwareCache = new();
+        private static readonly ConcurrentDictionary<string, double?> speedCache = new();
 
         private static readonly Lazy<HashSet<int>> discreteGpuVendors = new(DetectDiscreteGpuVendors);
 
@@ -34,6 +39,37 @@ namespace EncodeNavi.Analysis
                 DetectHardwareEncoderAsync(HardwareH264Candidates, width, height, token),
                 DetectHardwareEncoderAsync(HardwareAv1Candidates, width, height, token));
             return new EncoderCapabilities(software, hardware[0], hardware[1]);
+        }
+
+        public async Task<EncoderCapabilities> MeasureSpeedAsync(int width, int height, CancellationToken token)
+        {
+            var svtAv1Fps = Has("libsvtav1")
+                ? await MeasureFpsAsync(["-c:v", "libsvtav1", "-preset", SvtAv1MeasurePreset.ToString(), "-crf", "32"], width, height, token)
+                : null;
+            var hardwareFps = HardwareH264Encoder is { } h264
+                ? await MeasureFpsAsync(["-c:v", h264, "-global_quality", "24"], width, height, token)
+                : null;
+            return this with { SvtAv1Fps = svtAv1Fps, HardwareH264Fps = hardwareFps };
+        }
+
+        private static async Task<double?> MeasureFpsAsync(string[] encoderArguments, int width, int height, CancellationToken token)
+        {
+            var key = $"{string.Join(' ', encoderArguments)}:{width}x{height}";
+            if (speedCache.TryGetValue(key, out var cached))
+                return cached;
+
+            var frames = Math.Clamp((int)(MeasureFrames * 1920.0 * 1080 / Math.Max(1, width * height)), MinMeasureFrames, MeasureFrames);
+            var startup = await TimeAsync(encoderArguments, width, height, 1, token);
+            var total = await TimeAsync(encoderArguments, width, height, frames, token);
+            double? fps = startup is { } first && total is { } all && all > first ? (frames - 1) / (all - first).TotalSeconds : null;
+            speedCache[key] = fps;
+            return fps;
+        }
+
+        private static async Task<TimeSpan?> TimeAsync(string[] encoderArguments, int width, int height, int frames, CancellationToken token)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            return await RunAsync(encoderArguments, width, height, frames, token) ? stopwatch.Elapsed : null;
         }
 
         private static unsafe IReadOnlySet<string> DetectSoftwareEncoders()
@@ -84,7 +120,10 @@ namespace EncodeNavi.Analysis
             return vendors;
         }
 
-        private static async Task<bool> ProbeAsync(string encoder, int width, int height, CancellationToken token)
+        private static Task<bool> ProbeAsync(string encoder, int width, int height, CancellationToken token) =>
+            RunAsync(["-c:v", encoder], width, height, 1, token);
+
+        private static async Task<bool> RunAsync(string[] encoderArguments, int width, int height, int frames, CancellationToken token)
         {
             var startInfo = new ProcessStartInfo(FFmpegResourceLocator.GetFFmpegExePath())
             {
@@ -96,9 +135,9 @@ namespace EncodeNavi.Analysis
             string[] arguments =
             [
                 "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", $"color=c=black:s={width}x{height}:r=30",
-                "-frames:v", "1", "-pix_fmt", "yuv420p",
-                "-c:v", encoder, "-f", "null", "-",
+                "-f", "lavfi", "-i", frames > 1 ? $"testsrc2=s={width}x{height}:r=30" : $"color=c=black:s={width}x{height}:r=30",
+                "-frames:v", frames.ToString(), "-pix_fmt", "yuv420p",
+                .. encoderArguments, "-f", "null", "-",
             ];
             foreach (var argument in arguments)
                 startInfo.ArgumentList.Add(argument);

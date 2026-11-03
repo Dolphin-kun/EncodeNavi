@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using EncodeNavi.Analysis;
 using EncodeNavi.Settings;
+using EncodeNavi.View;
 using YukkuriMovieMaker.Views;
 
 namespace EncodeNavi.OutputDialog
@@ -65,6 +66,7 @@ namespace EncodeNavi.OutputDialog
 
         private void Start()
         {
+            InsertGoalSelector();
             view.Unloaded += View_Unloaded;
             view.AddHandler(Expander.ExpandedEvent, new RoutedEventHandler(OnLayoutChanged));
             view.AddHandler(Expander.CollapsedEvent, new RoutedEventHandler(OnLayoutChanged));
@@ -80,6 +82,22 @@ namespace EncodeNavi.OutputDialog
             }
 
             ScheduleRefresh();
+        }
+
+        private void InsertGoalSelector()
+        {
+            if (view.Content is not Grid grid || grid.Children.OfType<GoalSelectorControl>().Any())
+                return;
+            grid.RowDefinitions.Insert(0, new RowDefinition { Height = GridLength.Auto });
+            foreach (UIElement child in grid.Children)
+                Grid.SetRow(child, Grid.GetRow(child) + 1);
+            var selector = new GoalSelectorControl(ShowDetails);
+            grid.Children.Add(selector);
+            if (grid.Children.OfType<ScrollViewer>().FirstOrDefault() is not { } viewer)
+                return;
+            void AlignToViewport() => selector.Margin = new Thickness(0, 0, Math.Max(0, viewer.ActualWidth - viewer.ViewportWidth), 0);
+            viewer.ScrollChanged += (_, _) => AlignToViewport();
+            AlignToViewport();
         }
 
         private void View_Unloaded(object sender, RoutedEventArgs e)
@@ -107,11 +125,11 @@ namespace EncodeNavi.OutputDialog
                 return;
             }
 
-            detailsWindow = new DetailsWindow(Window.GetWindow(view), preferLeft: EncodeNaviSettings.Default.HintTheme == OutputHintTheme.Cyber);
-            detailsWindow.Closing += (_, _) => (presenter as CyberHintPresenter)?.KeepAbove(null);
+            detailsWindow = new DetailsWindow(Window.GetWindow(view), preferLeft: EncodeNaviSettings.Default.HintTheme is OutputHintTheme.Cyber or OutputHintTheme.Pop);
+            detailsWindow.Closing += (_, _) => (presenter as OverlayHintPresenter)?.KeepAbove(null);
             detailsWindow.Closed += (_, _) => detailsWindow = null;
             detailsWindow.Show();
-            (presenter as CyberHintPresenter)?.KeepAbove(detailsWindow);
+            (presenter as OverlayHintPresenter)?.KeepAbove(detailsWindow);
         }
 
         private void ScheduleRefresh()
@@ -171,16 +189,16 @@ namespace EncodeNavi.OutputDialog
 
             presenter?.Dispose();
             presenterTheme = theme;
-            if (theme == OutputHintTheme.Cyber)
+            if (theme is OutputHintTheme.Cyber or OutputHintTheme.Pop)
             {
-                var cyber = new CyberHintPresenter(window, ShowDetails);
+                OverlayHintPresenter overlay = theme == OutputHintTheme.Cyber ? new CyberHintPresenter(window) : new PopHintPresenter(window);
                 if (detailsWindow is { IsLoaded: true })
-                    cyber.KeepAbove(detailsWindow);
-                presenter = cyber;
+                    overlay.KeepAbove(detailsWindow);
+                presenter = overlay;
             }
             else
             {
-                presenter = new AdornerHintPresenter(theme == OutputHintTheme.Default, ShowDetails);
+                presenter = new AdornerHintPresenter(theme == OutputHintTheme.Default);
             }
             return presenter;
         }

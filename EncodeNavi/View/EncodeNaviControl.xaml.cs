@@ -34,6 +34,7 @@ namespace EncodeNavi.View
             {
                 OutputHintTheme.Color => (Color.FromRgb(0xFF, 0x98, 0x00), Color.FromRgb(0x4C, 0xAF, 0x50)),
                 OutputHintTheme.Cyber => (Color.FromRgb(0x00, 0xE5, 0xFF), Color.FromRgb(0x4A, 0x9C, 0xFF)),
+                OutputHintTheme.Pop => (Color.FromRgb(0xFF, 0x5F, 0xA2), Color.FromRgb(0x43, 0xC9, 0x6B)),
                 _ => (GetTextColor(0xC0), GetTextColor(0x70)),
             };
             Resources["WarningBrush"] = Frozen(warning);

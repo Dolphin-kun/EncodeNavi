@@ -12,5 +12,8 @@ namespace EncodeNavi.Settings
 
         [Display(Name = "サイバー")]
         Cyber,
+
+        [Display(Name = "ポップ")]
+        Pop,
     }
 }
